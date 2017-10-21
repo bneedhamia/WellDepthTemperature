@@ -12,25 +12,40 @@
 #include <DallasTemperature.h> // from https://github.com/milesburton/Arduino-Temperature-Control-Library
 
 /*
- * PIN_LED_L = LOW to light the on-board LED.
- *   The _L suffix indicates that the pin is Active-Low.
- *   Active-Low because that's how the ESP8266 Thing Dev board
- *   on-board LED is wired.
- * PIN_ONE_WIRE = the 1-Wire bus that all the temperature sensors
- *   are connected to.
- * 
- * Note about the ESP8266 Thing Dev board I/O pins: several pins are unsuitable
- * to be a 1-wire bus:
- *   0 is connected to an on-board 10K ohm pull-up resistor.
- *   2 is connected to an on-board 10K ohm pull-up resistor.
- *   5 is connected to an on-board LED ohm and 220 ohm resistor to Vcc.
- *   15 is connected to an on-board 10K pull-down resistor.
- *   16 is not (currently) supported by the OneWire library, because
- *     that pin requires special treatment in the low-level I/O code.
+ * Flags to change the program behavior:
+ * PRINT_ADDRESSES = uncomment this line to
+ *   just print all the temperature sensors' 1-wire addresses,
+ *   so you can copy them into the sensorAddress[] initializer.
+ *   Comment this line out for normal program behavior.
  */
+//#define PRINT_ADDRESSES true
+
+/*
+   PIN_LED_L = LOW to light the on-board LED.
+     The _L suffix indicates that the pin is Active-Low.
+     Active-Low because that's how the ESP8266 Thing Dev board
+     on-board LED is wired.
+   PIN_ONE_WIRE = the 1-Wire bus that all the temperature sensors
+     are connected to.
+
+   NUM_SENSORS = number of temperature sensors wired to the 1-Wire bus.
+
+   Note about the ESP8266 Thing Dev board I/O pins: several pins are unsuitable
+   to be a 1-wire bus:
+     0 is connected to an on-board 10K ohm pull-up resistor.
+     2 is connected to an on-board 10K ohm pull-up resistor.
+     5 is connected to an on-board LED ohm and 220 ohm resistor to Vcc.
+     15 is connected to an on-board 10K pull-down resistor.
+     16 is not (currently) supported by the OneWire library, because
+       that pin requires special treatment in the low-level I/O code.
+*/
 const int PIN_LED_L = 5;
 const int PIN_ONE_WIRE = 4;
 
+const int NUM_SENSORS = 6;
+
+// Time (milliseconds) per attempt to read and report the temperatures.
+const long MS_PER_TEMPERATURE_REQUEST = 1000L * 10;
 /*
    The EEPROM layout, starting at START_ADDRESS, is:
    String[EEPROM_WIFI_SSID_INDEX] = WiFi SSID. A null-terminated string
@@ -48,6 +63,28 @@ const int EEPROM_WIFI_SSID_INDEX = 0;
 const int EEPROM_WIFI_PASS_INDEX = 1;
 
 /*
+   The states of the state machine that loop() runs.
+
+   state = the current state of the machine. An STATE_* value.
+   stateBegunMs = if needed, the time (millis() we entered this state.
+
+   STATE_ERROR = an unrecoverable error has occurred. We stop.
+   STATE_WAITING_FOR_TEMPERATURES = we've issued a command to the sensors
+     to read the temperature, and are waiting for the time to read
+     their responses.
+     For example, a 12-bit temperature read requires 750ms.
+     stateBegunMs = time (millis()) we entered this state.
+   STATE_WAITING_FOR_NEXT_READ = we're waiting to request temperatures again.
+     stateBegunMs = time (millis()) we entered this state.
+*/
+
+const uint8_t STATE_ERROR = 0;
+const uint8_t STATE_WAITING_FOR_TEMPERATURES = 1;
+const uint8_t STATE_WAITING_FOR_NEXT_READ = 2;
+uint8_t state;
+unsigned long stateBegunMs = 0L;
+
+/*
    httpGet = the object that controls the WiFi stack.
    pHttpStream = if non-null, the stream of data from our Http Get request
    wire = The 1-Wire interface manager.
@@ -62,9 +99,36 @@ DallasTemperature sensors(&wire);
 
    wifiSsid = SSID of the network to connect to. Read from EEPROM.
    wifiPassword = Password of the network. Read from EEPROM.
- */
+*/
 char *wifiSsid;
 char *wifiPassword;
+
+/*
+   sensorAddress[] = the 1-wire address of each sensor on the 1-wire bus,
+   in order of distance from the controller. Note: this order is not the
+   order the sensors are returned by a search().
+
+   I created this table by:
+   1) Setting PRINT_ADDRESSES (above) and copying and pasting the output.
+   2) Commenting out PRINT_ADDRESSES (above)
+   3) In turn, heating (or cooling) one sensor and seeing which position
+     that sensor is in.
+   3) rearranging the rows here to order by distance from the processor.
+*/
+DeviceAddress sensorAddress[NUM_SENSORS] = {
+  {0x28, 0xC6, 0x8A, 0xA8, 0x7, 0x0, 0x0, 0x8A}, // was 4 */
+  {0x28, 0x52, 0x93, 0xA8, 0x7, 0x0, 0x0, 0x68}, // was 1 */
+  {0x28, 0x5A, 0xC6, 0xA8, 0x7, 0x0, 0x0, 0x8E}, // was 3 */
+  {0x28, 0xD2, 0xBB, 0xA8, 0x7, 0x0, 0x0, 0x44}, // was 2 */
+  {0x28, 0xB8, 0xB8, 0xA8, 0x7, 0x0, 0x0, 0x6},  // was 0 */
+  {0x28, 0x76, 0xCA, 0xA8, 0x7, 0x0, 0x0, 0x64}, // was 5 */
+};
+
+/*
+   The time (millis()) that we most recently issued
+   a read command to the temperature sensors.
+*/
+unsigned long lastReadTimeMs;
 
 // Called once automatically on Reset.
 void setup() {
@@ -92,29 +156,151 @@ void setup() {
 
   connectToAccessPoint();
 
-  sensors.begin();
-  uint8_t numDevices = sensors.getDeviceCount();
-  Serial.print(numDevices);
-  Serial.println(" temperature sensors responded.");
+  sensors.begin();  // searches the 1-wire bus for devices.
 
-  DeviceAddress sensor0;
-  if (!sensors.getAddress(sensor0, 0)) {
-    Serial.println("Sensor[0] was not found.");
-    //TODO set error flag.
-    return;
-  } else {
-    Serial.print("First sensor found: ");
-    printDeviceAddress(sensor0);
-  }
+#if defined(PRINT_ADDRESSES)
+  // Report the device addresses, in no particular order, and quit.
+  print1WireAddresses();
+  state = STATE_ERROR;
+  return;
+#endif
+
+  /*
+     Set up the temperature sensors:
+     Set to the highest resolution.
+     Set the library to have requestTemperatures() return immediately
+       rather than waiting the (long) conversion time.
+  */
+  sensors.setResolution(12);
+  sensors.setWaitForConversion(false);
+
+  // Start the first temperature reading.
+  sensors.requestTemperatures();
+  state = STATE_WAITING_FOR_TEMPERATURES;
+  stateBegunMs = millis();
 }
 
 void loop() {
+  long nowMs;
+  boolean succeeded; // a general flag for remembering a failure.
+
+  nowMs = millis();
+
+  switch (state) {
+    case STATE_ERROR:
+      // Blink the led.
+      if (nowMs % 1000 < 500) {
+        digitalWrite(PIN_LED_L, LOW);
+      } else {
+        digitalWrite(PIN_LED_L, HIGH);
+      }
+      break;
+
+    case STATE_WAITING_FOR_TEMPERATURES:
+      if ((nowMs - stateBegunMs) < sensors.millisToWaitForConversion(12)) {
+        return; // wait more.
+      }
+
+      // The temperatures are ready. Read them.
+      succeeded = true;
+      for (int i = 0; i < NUM_SENSORS; ++i) {
+        float tempC = sensors.getTempC(sensorAddress[i]);
+        if (tempC <= DEVICE_DISCONNECTED_C) {
+          succeeded = false;
+        }
+        
+        // for now, just report the temperature
+        if (i != 0) {
+          Serial.print(", ");
+        }
+        Serial.print(tempC, 1); // output 20.5 vs. 20.541
+      }
+      Serial.println();
+      
+      if (succeeded) {
+        // report the temperatures to the web server.
+        // Maybe always report them, converting the error value to a better one.
+      }
+
+      // Wait until it's time to request the temperatures again.
+      state = STATE_WAITING_FOR_NEXT_READ;
+      stateBegunMs = nowMs;
+      
+      break;
+
+    case STATE_WAITING_FOR_NEXT_READ:
+      if ((nowMs - stateBegunMs) < MS_PER_TEMPERATURE_REQUEST) {
+        return; // wait more.
+      }
+
+      // Request the sensors to read their temperatures.
+      sensors.requestTemperatures();
+      state = STATE_WAITING_FOR_TEMPERATURES;
+      stateBegunMs = millis();
+      break;
+      
+    default:
+      Serial.print("unknown state: ");
+      Serial.println(state);
+      state = STATE_ERROR;
+      break;
+  }
 }
 
 /*
- * Connect to the local WiFi Access Point.
- * The Auto Reconnect feature of the ESP8266 should keep us connected.
- */
+   Prints the 1-wire address of each device found on the 1-wire bus.
+   The print is in a form that can be copied and pasted into an array
+   declaration.
+
+   Returns the number of devices on the bus if successful,
+   0 if there is an error.
+*/
+uint8_t print1WireAddresses() {
+  uint8_t numDevices;
+
+  numDevices = sensors.getDeviceCount();
+  Serial.print(numDevices);
+  Serial.println(" temperature sensors responded:");
+
+  DeviceAddress address;
+  for (int i = 0; i < numDevices; ++i) {
+    if (!sensors.getAddress(address, i)) {
+      Serial.print("Sensor[");
+      Serial.print(i);
+      Serial.println("] was not found.");
+      return 0;
+    }
+    Serial.print("  ");
+    print1WireAddress(address);
+    if (i < numDevices - 1) {
+      Serial.print(",");
+    }
+    Serial.println();
+  }
+
+  return numDevices;
+}
+
+/*
+   Prints a device address in a form that can be pasted into Arduino code
+   as an initializer of a DeviceAddress variable.
+*/
+void print1WireAddress(DeviceAddress addr) {
+  Serial.print("{");
+  for (int i = 0; i < 8; ++i) {
+    if (i != 0) {
+      Serial.print(", ");
+    }
+    Serial.print("0x");
+    Serial.print(addr[i], HEX);
+  }
+  Serial.print("}");
+}
+
+/*
+   Connect to the local WiFi Access Point.
+   The Auto Reconnect feature of the ESP8266 should keep us connected.
+*/
 void connectToAccessPoint() {
   Serial.print(F("Connecting to "));
   Serial.println(wifiSsid);
@@ -134,22 +320,6 @@ void connectToAccessPoint() {
 
   Serial.print(F("Connected, IP address: "));
   Serial.println(WiFi.localIP());
-}
-
-/*
- * Prints a device address in a form that can be pasted into Arduino code
- * as an initializer of a DeviceAddress variable.
- */
-void printDeviceAddress(DeviceAddress addr) {
-  Serial.print("DeviceAddress x = {");
-  for (int i = 0; i < 8; ++i) {
-    if (i != 0) {
-      Serial.print(", ");
-    }
-    Serial.print("0x");
-    Serial.print(addr[i], HEX);
-  }
-  Serial.println("};");
 }
 
 /********************************

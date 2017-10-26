@@ -12,7 +12,7 @@ I chose this method over more reliable and direct methods because, compared to t
 
 The current Arduino Sketch requires a Sparkfun ESP8266 Thing Dev board, a few MAX31820 temperature sensors, Cat3 cable, and some discrete parts (diodes, resistor). Details are in the .ino Sketch PIN_ definitions and in BillOfMaterials.ods.
 
-Next steps: Measure the well tank, decide how many sensors to use, decide how to plug sensors into the 1-wire bus, and construct the bus.
+Next steps: Construct the 1-wire bus and the plugs for the sensors.
 
 ## Files
 * BillOfMaterials.ods = the parts list

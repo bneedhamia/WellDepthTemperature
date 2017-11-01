@@ -76,6 +76,8 @@ const uint8_t MAX31820_RESOLUTION_BITS = 12;
    The EEPROM layout, starting at START_ADDRESS, is:
    String[EEPROM_WIFI_SSID_INDEX] = WiFi SSID. A null-terminated string
    String[EEPROM_WIFI_PASS_INDEX] = WiFi Password. A null-terminated string 1
+   String[EEPROM_WIFI_TIMEOUT_SECS_INDEX = WiFi connection timeout, in seconds,
+     as an Ascii string.
    TODO More to come: web site credentials.
    EEPROM_END_MARK
 
@@ -87,6 +89,7 @@ const byte EEPROM_END_MARK = 255; // marks the end of the data we wrote to EEPRO
 const int EEPROM_MAX_STRING_LENGTH = 120; // max string length in EEPROM
 const int EEPROM_WIFI_SSID_INDEX = 0;
 const int EEPROM_WIFI_PASS_INDEX = 1;
+const int EEPROM_WIFI_TIMEOUT_SECS_INDEX = 2;
 
 /*
    The states of the state machine that loop() runs.
@@ -130,10 +133,11 @@ DallasTemperature wireDevices(&wire);
 
    wifiSsid = SSID of the network to connect to. Read from EEPROM.
    wifiPassword = Password of the network. Read from EEPROM.
+   wifiTimeoutMs = Wifi connection timeout, in milliseconds. Read from EEPROM.
 */
 char *wifiSsid;
 char *wifiPassword;
-const long WIFI_TIMEOUT_MS = 1000L * 60; // eventually move to EEPROM
+long wifiTimeoutMs;
 
 /*
    sensorAddress[] = the 1-wire address of each sensor on the 1-wire bus,
@@ -186,11 +190,25 @@ void setup() {
   return;
 #endif
 
-  // read the wifi credentials from EEPROM, if they're there.
-  wifiSsid = readEEPROMString(START_ADDRESS, 0);
-  wifiPassword = readEEPROMString(START_ADDRESS, 1);
-  if (wifiSsid == 0 || wifiPassword == 0) {
+  /*
+   * Read the wifi parameters from EEPROM, if they're there.
+   * Convert the timeout from a string and Seconds
+   *   to a long number of milliseconds.
+   */
+  wifiSsid = readEEPROMString(START_ADDRESS, EEPROM_WIFI_SSID_INDEX);
+  wifiPassword = readEEPROMString(START_ADDRESS, EEPROM_WIFI_PASS_INDEX);
+  char *timeoutText = readEEPROMString(START_ADDRESS
+    , EEPROM_WIFI_TIMEOUT_SECS_INDEX);
+  if (wifiSsid == 0 || wifiPassword == 0 || timeoutText == 0) {
     Serial.println(F("EEPROM not initialized."));
+
+    state = STATE_ERROR;
+    return;
+  }
+  wifiTimeoutMs = atol(timeoutText) * 1000L;
+  if (wifiTimeoutMs == 0L) {
+    Serial.print(F("Garbled EEPROM WiFi timeout: "));
+    Serial.println(timeoutText);
 
     state = STATE_ERROR;
     return;
@@ -200,7 +218,7 @@ void setup() {
   WiFi.mode(WIFI_STA);    // Station (Client), not soft AP or dual mode.
   WiFi.setAutoConnect(false); // don't connect until I say
   WiFi.setAutoReconnect(true); // if the connection ever drops, reconnect.
-  if (!connectToAccessPoint(wifiSsid, wifiPassword, WIFI_TIMEOUT_MS)) {
+  if (!connectToAccessPoint(wifiSsid, wifiPassword, wifiTimeoutMs)) {
     state = STATE_ERROR;
     return;
   }

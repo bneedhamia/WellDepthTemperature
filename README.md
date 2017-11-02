@@ -2,7 +2,7 @@
 # WellDepthTemperature
 An Arduino Sketch for a Sparkfun ESP8266 Thing Dev board, using multiple MAX31820 temperature sensors to estimate the height of water in a well tank.
 
-This is a WORK IN PROGRESS. The state of the project: It currently connects to the local WiFi access point, reads the number of connected temperature sensors, and prints the 1-Wire address of each of them. It periodically reads the temperature from each of 12 sensors. See Diary.odt for details, remaining work, and progress.
+This is a WORK IN PROGRESS. The state of the project: It currently connects to the local WiFi access point, reads the number of connected temperature sensors, and prints the 1-Wire address of each of them. It periodically reads the temperature from each of 12 sensors and performs a test Https Get from a page on needhamia.com. See Diary.odt for details, remaining work, and progress.
 
 Theory of operation: The side of the well tank is cooler below the level of the water than it is above that level. I plan to hot-glue a series of temperature sensors to the tank exterior, in a vertical line. Then I should be able to periodically measure the temperature at each sensor, estimate which sensors are below the water line, and translate that knowledge into an estimate of the level of the water in the tank.
 

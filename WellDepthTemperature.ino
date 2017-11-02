@@ -24,10 +24,47 @@
 //#define PRINT_1_WIRE_ADDRESSES true
 
 #include <ESP8266WiFi.h> // Defines WiFi, the WiFi controller object
-#include <ESP8266HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <EEPROM.h>   // NOTE: ESP8266 EEPROM library differs from Arduino's.
 #include <OneWire.h>  // https://github.com/PaulStoffregen/OneWire
 #include <DallasTemperature.h> // https://github.com/milesburton/Arduino-Temperature-Control-Library
+
+/*
+   Web Site specific constants.
+     host = the hostname of the server to connect to.
+     port = the HTTPS port to connect to (443 is the default).
+     sslFingerprint = the SHA1 fingerprint of the SSL Certificate
+       of the web site we will be connecting to.
+     httpProtocol = the protocol to use. Some sites prefer HTTP/1.1.
+       I use HTTP/1.0 to avoid getting a response that is
+       Transfer-encoding: chunked
+       which is hard to parse.
+     url = the url, less https:// and the server name.
+     httpAgent = a string to identify our client software.
+       Replace this with whatever you like (no spaces).
+
+
+     To Find the Fingerprint of a site:
+     - Browse to an https: page on the desired server.
+     - Copy the certificate from that page. There are instructions
+       on how to do this in various browsers. Search for
+       "read the certificate from a website in Chrome" (without quotes)
+       or whatever web client you prefer.
+     - Save the certificate in Base-64 encoded X.509
+     - In git bash (or in a linux terminal window, type
+       openssl x509 -noout -fingerprint -sha1 -inform pem -in certificate-file.cer
+       Where "certificate-file.cer" is the filename of the certificate you saved.
+     - in the response, copy the colon-separated set of numbers.
+     - paste them in the sslFingerprint initializer below.
+     - replace each ":" character in sslFingerprint with a space.
+*/
+const char *host = "needhamia.com";
+const int port = 443;
+const char *sslFingerprint
+  = "36 33 CC B8 5C 76 B8 0D BF 79 21 0E 18 46 2E 63 D5 CD 4C FA";
+const char *httpProtocol = "HTTP/1.0";
+const char *url = "/sample-page/";
+const char *httpAgent = "ESP8266HttpsClient";
 
 /*
    Hardware information:
@@ -56,13 +93,13 @@ const int PIN_ONE_WIRE = 4;
 const int NUM_SENSORS = 12;
 
 /*
- * Time (milliseconds) per attempt to read and report the temperatures.
- * Set this to, say 100L * 5 for temperature testing (e.g., to see which
- * sensor is which by heating one and seeing which sensor temperature changes).
- * Set this to over 5 minutes (1000L * 60L * 5) for normal operation,
- * so you don't overwhelm the server.
- */
-const long MS_PER_TEMPERATURE_REQUEST = 1000L * 5;
+   Time (milliseconds) per attempt to read and report the temperatures.
+   Set this to, say 100L * 5 for temperature testing (e.g., to see which
+   sensor is which by heating one and seeing which sensor temperature changes).
+   Set this to over 5 minutes (1000L * 60L * 5) for normal operation,
+   so you don't overwhelm the server.
+*/
+const long MS_PER_TEMPERATURE_REQUEST = 1000L * 30;
 
 /*
    The resolution (number of bits) to set the temperature sensors to.
@@ -114,8 +151,7 @@ uint8_t state;
 unsigned long stateBegunMs = 0L;
 
 /*
-   httpGet = the object that controls the WiFi stack.
-   pHttpStream = if non-null, the stream of data from our Http Get request
+   client = manages the HTTPS connection to the web site.
    wire = The 1-Wire interface manager.
 
    NOTE: because the ESP8266 WiFi operates in the background,
@@ -123,8 +159,7 @@ unsigned long stateBegunMs = 0L;
      In particular, never (even in setup()) call any delay() greater than
      a few hundred milliseconds.
 */
-HTTPClient httpGet;
-WiFiClient *pHttpStream = 0;
+WiFiClientSecure client;
 OneWire wire(PIN_ONE_WIRE);
 DallasTemperature wireDevices(&wire);
 
@@ -191,14 +226,14 @@ void setup() {
 #endif
 
   /*
-   * Read the wifi parameters from EEPROM, if they're there.
-   * Convert the timeout from a string and Seconds
-   *   to a long number of milliseconds.
-   */
+     Read the wifi parameters from EEPROM, if they're there.
+     Convert the timeout from a string and Seconds
+       to a long number of milliseconds.
+  */
   wifiSsid = readEEPROMString(START_ADDRESS, EEPROM_WIFI_SSID_INDEX);
   wifiPassword = readEEPROMString(START_ADDRESS, EEPROM_WIFI_PASS_INDEX);
   char *timeoutText = readEEPROMString(START_ADDRESS
-    , EEPROM_WIFI_TIMEOUT_SECS_INDEX);
+                                       , EEPROM_WIFI_TIMEOUT_SECS_INDEX);
   if (wifiSsid == 0 || wifiPassword == 0 || timeoutText == 0) {
     Serial.println(F("EEPROM not initialized."));
 
@@ -278,6 +313,7 @@ void loop() {
       Serial.println();
 
       if (succeeded) {
+        doHttpsGet();
         // report the temperatures to the web server.
         // Maybe always report them, converting the error value to a better one.
       }
@@ -305,6 +341,59 @@ void loop() {
       state = STATE_ERROR;
       break;
   }
+}
+
+//TODO being developed. Replace with an upload of the temperatures.
+boolean doHttpsGet() {
+  char ch;
+
+  if (!client.connect(host, port)) {
+    Serial.print("Failed to connect to ");
+    Serial.print(host);
+    Serial.print(" port ");
+    Serial.println(port);
+    return false;
+  }
+  Serial.print("Connected to ");
+  Serial.println(host);
+
+  if (!client.verify(sslFingerprint, host)) {
+    Serial.print("Fingerprint doesn't match certificate for ");
+    Serial.println(host);
+    client.stop();
+    return false;
+  }
+
+  client.print("GET ");
+  client.print(url);
+  client.print(" ");
+  client.println(httpProtocol);
+
+  client.print("Host: ");
+  client.println(host);
+
+  client.print("User-Agent: ");
+  client.println(httpAgent);
+
+  client.println("Connection: close");
+
+  client.println();  // blank line indicates the end of the HTTP headers.
+
+  Serial.println("Reading response:");
+  while (client.connected()) {
+    if (client.available()) {
+      ch = client.read();
+      Serial.print(ch);
+    }
+    delay(1); // to yield the processor for a moment.
+  }
+  
+  Serial.println();
+  Serial.println("connection closed.");
+
+  client.stop();
+
+  return true;
 }
 
 /*
@@ -376,7 +465,7 @@ boolean connectToAccessPoint(char *ssid, char *pass, long timeoutMs) {
 
   startTimeMs = millis();
   WiFi.begin(ssid, wifiPassword);
-  
+
   // Wait for the connection or timeout.
   int wifiStatus = WiFi.status();
   while (wifiStatus != WL_CONNECTED)

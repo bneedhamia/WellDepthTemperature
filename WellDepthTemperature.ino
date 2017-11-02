@@ -377,6 +377,9 @@ boolean doHttpsGet() {
 
   client.println("Connection: close");
 
+  //TODO rewrite this simple attempt at basic authorization.
+  client.println("Authorization: Basic Y2hhcmxlczp3b25kZXJsYW5kCg==");
+
   client.println();  // blank line indicates the end of the HTTP headers.
 
   Serial.println("Reading response:");

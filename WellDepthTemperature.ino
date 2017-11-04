@@ -63,7 +63,7 @@ const int port = 443;
 const char *sslFingerprint
   = "36 33 CC B8 5C 76 B8 0D BF 79 21 0E 18 46 2E 63 D5 CD 4C FA";
 const char *httpProtocol = "HTTP/1.0";
-const char *url = "/sample-page/";
+const char *url = "/webapps/welldepth/welldepthpost.php";
 const char *httpAgent = "ESP8266HttpsClient";
 
 /*
@@ -364,7 +364,7 @@ boolean doHttpsGet() {
     return false;
   }
 
-  client.print("GET ");
+  client.print("POST ");
   client.print(url);
   client.print(" ");
   client.println(httpProtocol);
@@ -377,10 +377,14 @@ boolean doHttpsGet() {
 
   client.println("Connection: close");
 
-  //TODO rewrite this simple attempt at basic authorization.
-  client.println("Authorization: Basic Y2hhcmxlczp3b25kZXJsYW5kCg==");
+  client.println("Content-Type: application/x-www-form-urlencoded");
 
+  client.println("Content-Length: 26");
+  
   client.println();  // blank line indicates the end of the HTTP headers.
+
+  // A dummy post set of parameters.
+  client.print("username=Me&password=Hello");
 
   Serial.println("Reading response:");
   while (client.connected()) {

@@ -15,11 +15,14 @@ The current Arduino Sketch requires a Sparkfun ESP8266 Thing Dev board, a few MA
 Next steps: Construct the 1-wire bus and the plugs for the sensors.
 
 ## Files
-* BillOfMaterials.ods = the parts list
+* BillOfMaterials.ods = the parts list.
 * Diary.odt = my journal/diary of the project, with design details.
-* LICENSE = the project GPL2 license file
-* Project.jpg = a photo of the project so far
-* README.md = this file
-* WellDepth.ino = the ESP8266 Arduino Sketch
-* welldepthpost.php = the php web page that receives the Arduino's HTTPS POST request
+* LICENSE = the project GPL2 license file.
+* Project.jpg = a photo of the project so far.
+* README.md = this file.
+* webInstallation.odt = instructions on how to install the Sketch and web service.
+* WellDepth.ino = the ESP8266 Arduino Sketch.
+* welldepthconfig.php = site-specific PHP .ini-format configuration data, such as the sql database name.
+Place this file in the same directory on your web site as welldepthpost.php.
+* welldepthpost.php = the php web page that receives the Arduino's HTTPS POST request.
 * More to come as I create them: fritzing diagram; mechanical notes; etc.

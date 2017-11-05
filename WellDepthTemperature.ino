@@ -43,7 +43,6 @@
      httpAgent = a string to identify our client software.
        Replace this with whatever you like (no spaces).
 
-
      To Find the Fingerprint of a site:
      - Browse to an https: page on the desired server.
      - Copy the certificate from that page. There are instructions
@@ -99,7 +98,7 @@ const int NUM_SENSORS = 12;
    Set this to over 5 minutes (1000L * 60L * 5) for normal operation,
    so you don't overwhelm the server.
 */
-const long MS_PER_TEMPERATURE_REQUEST = 1000L * 30;
+const long MS_PER_TEMPERATURE_REQUEST = 1000L * 60;
 
 /*
    The resolution (number of bits) to set the temperature sensors to.
@@ -115,11 +114,24 @@ const uint8_t MAX31820_RESOLUTION_BITS = 12;
    String[EEPROM_WIFI_PASS_INDEX] = WiFi Password. A null-terminated string 1
    String[EEPROM_WIFI_TIMEOUT_SECS_INDEX = WiFi connection timeout, in seconds,
      as an Ascii string.
-   TODO More to come: web site credentials.
+   String[EEPROM_WEB_USERNAME] = the HTTPS POST username parameter to send.
+   String[EEPROM_WEB_PASSWORD] = the HTTPS POST password parameter to send.
    EEPROM_END_MARK
 
    To write these values, use the Sketch write_eeprom_strings.
    See https://github.com/bneedhamia/write_eeprom_strings
+   Modify that Sketch, replacing the initialization of STRING_NAME[] with
+   the following lines:
+
+const char *STRING_NAME[] = {
+  "SSID",
+  "Password",
+  "Timeout(seconds)",
+  "username",
+  "password",
+  0
+};
+
 */
 const int START_ADDRESS = 0;      // The first EEPROM address to read from.
 const byte EEPROM_END_MARK = 255; // marks the end of the data we wrote to EEPROM
@@ -127,6 +139,8 @@ const int EEPROM_MAX_STRING_LENGTH = 120; // max string length in EEPROM
 const int EEPROM_WIFI_SSID_INDEX = 0;
 const int EEPROM_WIFI_PASS_INDEX = 1;
 const int EEPROM_WIFI_TIMEOUT_SECS_INDEX = 2;
+const int EEPROM_WEB_USERNAME_INDEX = 3;
+const int EEPROM_WEB_PASSWORD_INDEX = 4;
 
 /*
    The states of the state machine that loop() runs.
@@ -164,15 +178,24 @@ OneWire wire(PIN_ONE_WIRE);
 DallasTemperature wireDevices(&wire);
 
 /*
-   WiFi access point parameters.
+   WiFi access point parameters, read from EEPROM.
 
-   wifiSsid = SSID of the network to connect to. Read from EEPROM.
-   wifiPassword = Password of the network. Read from EEPROM.
-   wifiTimeoutMs = Wifi connection timeout, in milliseconds. Read from EEPROM.
+   wifiSsid = SSID of the network to connect to.
+   wifiPassword = Password of the network.
+   wifiTimeoutMs = Wifi connection timeout, in milliseconds.
 */
 char *wifiSsid;
 char *wifiPassword;
 long wifiTimeoutMs;
+
+/*
+ * HTTPS POST private parameters, read from EEPROM.
+ * 
+ * webUsername = the POST 'username' parameter.
+ * webPassword = the POST 'password' parameter.
+ */
+char *webUsername;
+char *webPassword;
 
 /*
    sensorAddress[] = the 1-wire address of each sensor on the 1-wire bus,
@@ -202,6 +225,19 @@ DeviceAddress sensorAddress[NUM_SENSORS] = {
   {0x28, 0xF9, 0x8D, 0xA8, 0x7, 0x0, 0x0, 0x12},
   {0x28, 0xAB, 0xA8, 0xA8, 0x7, 0x0, 0x0, 0x78}
 };
+
+/*
+ * The results of measurement:
+ * 
+ * wellDepthM = the depth of well water, in meters from the bottom of the tank,
+ *  or -1 if the depth calculation failed.
+ *  Note: the accuracy of this value is likely about 20cm.
+ * wellTempC[] = the temperature (degrees Celsius) read from each sensor,
+ *  or TODO pick a number if the sensor failed.
+ *  Indexed by the sensor number in sensorAddress[].
+ */
+float wellDepthM;
+float wellTempC[NUM_SENSORS];
 
 // Called once automatically on Reset.
 void setup() {
@@ -244,6 +280,18 @@ void setup() {
   if (wifiTimeoutMs == 0L) {
     Serial.print(F("Garbled EEPROM WiFi timeout: "));
     Serial.println(timeoutText);
+
+    state = STATE_ERROR;
+    return;
+  }
+
+  /*
+   * Read the Web Service username and password from EEPROM
+   */
+  webUsername = readEEPROMString(START_ADDRESS, EEPROM_WEB_USERNAME_INDEX);
+  webPassword = readEEPROMString(START_ADDRESS, EEPROM_WEB_PASSWORD_INDEX);
+  if (webUsername == 0 || webPassword == 0) {
+    Serial.println(F("EEPROM not initialized."));
 
     state = STATE_ERROR;
     return;
@@ -303,6 +351,7 @@ void loop() {
         if (tempC <= DEVICE_DISCONNECTED_C) {
           succeeded = false;
         }
+        wellTempC[i] = tempC;
 
         // for now, just report the temperature
         if (i != 0) {
@@ -311,6 +360,10 @@ void loop() {
         Serial.print(tempC, 1); // output 20.5 vs. 20.54
       }
       Serial.println();
+
+      // Calculate the well depth
+      // For now, just leave a dummy value.
+      wellDepthM = -1.0;
 
       if (succeeded) {
         doHttpsGet();
@@ -345,8 +398,26 @@ void loop() {
 
 //TODO being developed. Replace with an upload of the temperatures.
 boolean doHttpsGet() {
+  char content[1024];  // Buffer for the content of the POST request.
   char ch;
 
+  // Build the content of the POST. That is, the parameters.
+  
+  strcpy(content, "");
+
+  strcat(content, "username=");
+  strcat(content, webUsername); //TODO urlencode
+  
+  strcat(content, "&");
+  strcat(content, "password=");
+  strcat(content, webPassword); // TODO urlencode.
+
+  strcat(content, "&");
+  strcat(content, "well_depth_m=");
+  strcat(content, "-1.0" /*wellDepthM*/);
+
+  // Perform the Post
+  
   if (!client.connect(host, port)) {
     Serial.print("Failed to connect to ");
     Serial.print(host);
@@ -379,12 +450,13 @@ boolean doHttpsGet() {
 
   client.println("Content-Type: application/x-www-form-urlencoded");
 
-  client.println("Content-Length: 26");
+  client.print("Content-Length: ");
+  client.println(strlen(content));
   
   client.println();  // blank line indicates the end of the HTTP headers.
 
-  // A dummy post set of parameters.
-  client.print("username=Me&password=Hello");
+  // send the content: the POST parameters.
+  client.print(content);
 
   Serial.println("Reading response:");
   while (client.connected()) {

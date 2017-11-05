@@ -123,14 +123,14 @@ const uint8_t MAX31820_RESOLUTION_BITS = 12;
    Modify that Sketch, replacing the initialization of STRING_NAME[] with
    the following lines:
 
-const char *STRING_NAME[] = {
+  const char *STRING_NAME[] = {
   "SSID",
   "Password",
   "Timeout(seconds)",
   "username",
   "password",
   0
-};
+  };
 
 */
 const int START_ADDRESS = 0;      // The first EEPROM address to read from.
@@ -189,11 +189,11 @@ char *wifiPassword;
 long wifiTimeoutMs;
 
 /*
- * HTTPS POST private parameters, read from EEPROM.
- * 
- * webUsername = the POST 'username' parameter.
- * webPassword = the POST 'password' parameter.
- */
+   HTTPS POST private parameters, read from EEPROM.
+
+   webUsername = the POST 'username' parameter.
+   webPassword = the POST 'password' parameter.
+*/
 char *webUsername;
 char *webPassword;
 
@@ -227,15 +227,15 @@ DeviceAddress sensorAddress[NUM_SENSORS] = {
 };
 
 /*
- * The results of measurement:
- * 
- * wellDepthM = the depth of well water, in meters from the bottom of the tank,
- *  or -1 if the depth calculation failed.
- *  Note: the accuracy of this value is likely about 20cm.
- * wellTempC[] = the temperature (degrees Celsius) read from each sensor,
- *  or TODO pick a number if the sensor failed.
- *  Indexed by the sensor number in sensorAddress[].
- */
+   The results of measurement:
+
+   wellDepthM = the depth of well water, in meters from the bottom of the tank,
+    or -1 if the depth calculation failed.
+    Note: the accuracy of this value is likely about 20cm.
+   wellTempC[] = the temperature (degrees Celsius) read from each sensor,
+    or TODO pick a number if the sensor failed.
+    Indexed by the sensor number in sensorAddress[].
+*/
 float wellDepthM;
 float wellTempC[NUM_SENSORS];
 
@@ -286,8 +286,8 @@ void setup() {
   }
 
   /*
-   * Read the Web Service username and password from EEPROM
-   */
+     Read the Web Service username and password from EEPROM
+  */
   webUsername = readEEPROMString(START_ADDRESS, EEPROM_WEB_USERNAME_INDEX);
   webPassword = readEEPROMString(START_ADDRESS, EEPROM_WEB_PASSWORD_INDEX);
   if (webUsername == 0 || webPassword == 0) {
@@ -324,7 +324,6 @@ void setup() {
 // Called repeatedly, automatically.
 void loop() {
   long nowMs;
-  boolean succeeded; // a general flag for remembering a failure.
 
   nowMs = millis();
 
@@ -344,20 +343,18 @@ void loop() {
         return; // wait more.
       }
 
-      // The temperatures are ready. Read them.
-      succeeded = true;
+      // The temperatures are ready. Read and print them.
       for (int i = 0; i < NUM_SENSORS; ++i) {
-        float tempC = wireDevices.getTempC(sensorAddress[i]);
-        if (tempC <= DEVICE_DISCONNECTED_C) {
-          succeeded = false;
-        }
-        wellTempC[i] = tempC;
+        wellTempC[i] = wireDevices.getTempC(sensorAddress[i]);
 
-        // for now, just report the temperature
         if (i != 0) {
           Serial.print(", ");
         }
-        Serial.print(tempC, 1); // output 20.5 vs. 20.54
+        if (wellTempC[i] <= DEVICE_DISCONNECTED_C) {
+          Serial.print("NC");
+        } else {
+          Serial.print(wellTempC[i], 2);
+        }
       }
       Serial.println();
 
@@ -365,11 +362,8 @@ void loop() {
       // For now, just leave a dummy value.
       wellDepthM = -1.0;
 
-      if (succeeded) {
-        doHttpsGet();
-        // report the temperatures to the web server.
-        // Maybe always report them, converting the error value to a better one.
-      }
+      // Report all our data (that we have) to the web server.
+      doHttpsPost();
 
       // Wait until it's time to request the temperatures again.
       state = STATE_WAITING_FOR_NEXT_READ;
@@ -396,38 +390,51 @@ void loop() {
   }
 }
 
-//TODO being developed. Replace with an upload of the temperatures.
-boolean doHttpsGet() {
+/*
+    Uploads the temperatures and estimated well depth.
+    Uses:
+      webUsername, webPassword
+      wellDepthM
+      wellTempC[]
+      and the server information (host, post, etc.)
+
+    Returns true if successful, false otherwise.
+*/
+boolean doHttpsPost() {
   char content[1024];  // Buffer for the content of the POST request.
   char *pContent;  // a pointer into content[]
   char ch;
 
   // Build the content of the POST. That is, the parameters.
-  
+
   strcpy(content, "");
 
   strcat(content, "username=");
   strcat(content, webUsername); //TODO urlencode
-  
+
   strcat(content, "&");
   strcat(content, "password=");
   strcat(content, webPassword); // TODO urlencode.
 
-  strcat(content, "&");
-  strcat(content, "well_depth_m=");
-  floatcat(content, wellDepthM);
+  if (wellDepthM > 0.0) {
+    strcat(content, "&");
+    strcat(content, "well_depth_m=");
+    floatcat(content, wellDepthM);
+  }
 
   for (int i = 0; i < NUM_SENSORS; ++i) {
-    strcat(content, "&");
-    strcat(content, "well_temp_c");
-    pContent = content + strlen(content);
-    itoa(i, pContent, 10);
-    strcat(content, "=");
-    floatcat(content, wellTempC[i]);
+    if (wellTempC[i] > DEVICE_DISCONNECTED_C) {
+      strcat(content, "&");
+      strcat(content, "well_temp_c");
+      pContent = content + strlen(content);
+      itoa(i, pContent, 10);
+      strcat(content, "=");
+      floatcat(content, wellTempC[i]);
+    }
   }
 
   // Perform the Post
-  
+
   if (!client.connect(host, port)) {
     Serial.print("Failed to connect to ");
     Serial.print(host);
@@ -462,7 +469,7 @@ boolean doHttpsGet() {
 
   client.print("Content-Length: ");
   client.println(strlen(content));
-  
+
   client.println();  // blank line indicates the end of the HTTP headers.
 
   // send the content: the POST parameters.
@@ -476,7 +483,7 @@ boolean doHttpsGet() {
     }
     delay(1); // to yield the processor for a moment.
   }
-  
+
   Serial.println();
   Serial.println("connection closed.");
 
@@ -486,14 +493,14 @@ boolean doHttpsGet() {
 }
 
 /*
- * Append (concatenate) the given floating-point number
- * as a string to the given buffer.
- * 
- * buffer = a space to concatenate into. It must contain a null-terminated
- *  set of characters.
- * f = the floating point number to convert into a set of characters.
- * 
- */
+   Append (concatenate) the given floating-point number
+   as a string to the given buffer.
+
+   buffer = a space to concatenate into. It must contain a null-terminated
+    set of characters.
+   f = the floating point number to convert into a set of characters.
+
+*/
 void floatcat(char *buffer, float f) {
   char *p;
   long l;

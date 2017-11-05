@@ -9,6 +9,26 @@
 // Licensed under GNU General Public License Version 2.0,
 // a copy of which should have been distributed with this program.
 
+const NUM_SENSORS = 12; // expected number of temperature sensors.
+
+//////////
+// Returns the floating-point value of the given string,
+//   or NULL if the string is NULL,
+//   or calls sendResult() for failure.
+//
+// $s = the string to convert, or NULL.
+function toFloat($s) {
+    if ($s == NULL) {
+        return NULL;
+    }
+    
+    $result = filter_var($s, FILTER_VALIDATE_FLOAT);
+    if ($result == FALSE) {
+        sendResult(FALSE, 'Not a floating-point number: ' . $s);
+    }
+    return $result;
+}
+
 //////////
 // Outputs the result of our page.
 // boolean success: true if we were successful, false otherwise.
@@ -73,12 +93,19 @@ if (strcmp($post_pass, $app_password) != 0) {
     sendResult(FALSE, 'invalid username, password');
 }
 
-$wellDepthM = $_POST['well_depth_m'];
+$wellDepthM = toFloat($_POST['well_depth_m']);
 
-echo 'welldepthm=' . $wellDepthM;
+$wellTempC = array();
+for ($index = 0; $index < 12; ++$index) { //TODO constant
+    $wellTempC[$index] = toFloat($_POST['well_temp_c' . $index]);
+}
 
-echo 'db=' . $database . ', dbuser=' . $sql_username . ', dbpassword=' . $sql_password . '<br>';
+//echo 'welldepthm=' . $wellDepthM . '<br>';
+//for ($index = 0; $index < 12; ++$index) { //TODO constant
+//    echo 'temp[' . $index . ']=' . $wellTempC[$index] . '<br>';
+//}
 
+//TODO perform the sql insertion.
 
 // Respond that the Post succeeded.
 sendresult(TRUE, NULL);

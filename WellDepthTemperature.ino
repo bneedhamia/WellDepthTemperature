@@ -399,6 +399,7 @@ void loop() {
 //TODO being developed. Replace with an upload of the temperatures.
 boolean doHttpsGet() {
   char content[1024];  // Buffer for the content of the POST request.
+  char *pContent;  // a pointer into content[]
   char ch;
 
   // Build the content of the POST. That is, the parameters.
@@ -414,7 +415,16 @@ boolean doHttpsGet() {
 
   strcat(content, "&");
   strcat(content, "well_depth_m=");
-  strcat(content, "-1.0" /*wellDepthM*/);
+  floatcat(content, wellDepthM);
+
+  for (int i = 0; i < NUM_SENSORS; ++i) {
+    strcat(content, "&");
+    strcat(content, "well_temp_c");
+    pContent = content + strlen(content);
+    itoa(i, pContent, 10);
+    strcat(content, "=");
+    floatcat(content, wellTempC[i]);
+  }
 
   // Perform the Post
   
@@ -473,6 +483,39 @@ boolean doHttpsGet() {
   client.stop();
 
   return true;
+}
+
+/*
+ * Append (concatenate) the given floating-point number
+ * as a string to the given buffer.
+ * 
+ * buffer = a space to concatenate into. It must contain a null-terminated
+ *  set of characters.
+ * f = the floating point number to convert into a set of characters.
+ * 
+ */
+void floatcat(char *buffer, float f) {
+  char *p;
+  long l;
+
+  p = buffer + strlen(buffer);
+
+  // Convert the sign.
+  if (f < 0.0) {
+    *p++ = '-';
+    f = -f;
+  }
+
+  // Convert the integer part.
+  l = (long) f;
+  f -= (float) l;
+  itoa(l, p, 10);
+  p += strlen(p);
+
+  // Convert the first 2 digits of the fraction.
+  *p++ = '.';
+  f *= 100.0;
+  itoa((long) f, p, 10);
 }
 
 /*

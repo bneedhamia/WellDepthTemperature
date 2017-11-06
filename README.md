@@ -18,6 +18,7 @@ Next steps: Construct the 1-wire bus and the plugs for the sensors.
 ## Files
 * BillOfMaterials.ods = the parts list.
 * createtables.sql = an SQL file to import into MySQL to create the well depth database table.
+* diagram.odp = project diagrams.
 * Diary.odt = my journal/diary of the project, with design details.
 * LICENSE = the project GPL2 license file.
 * Project.jpg = a photo of the project so far.

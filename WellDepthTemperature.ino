@@ -363,7 +363,11 @@ void loop() {
       wellDepthM = -1.0;
 
       // Report all our data (that we have) to the web server.
-      doHttpsPost();
+      if (doHttpsPost()) {
+        digitalWrite(PIN_LED_L, HIGH); // success: turn off the LED.
+      } else {
+        digitalWrite(PIN_LED_L, LOW); // failure: turn on the LED.
+      }
 
       // Wait until it's time to request the temperatures again.
       state = STATE_WAITING_FOR_NEXT_READ;

@@ -3,7 +3,7 @@
 An Arduino Sketch for a Sparkfun ESP8266 Thing Dev board, using multiple MAX31820 temperature sensors to estimate the height of water in a well tank.
 
 This is a WORK IN PROGRESS. The state of the project: It currently connects to the local WiFi access point, reads the number of connected temperature sensors, and prints the 1-Wire address of each of them. It periodically reads the temperature from each of 12 sensors and performs an Https Post to a php page on needhamia.com that stores the data
-in an SQL database. See Diary.odt for details, remaining work, and progress.
+in an SQL database. I'm designing the 3D printed boxes now. See Diary.odt for details, remaining work, and progress.
 
 Theory of operation: The side of the well tank is cooler below the level of the water than it is above that level. I plan to hot-glue a series of temperature sensors to the tank exterior, in a vertical line. Then I should be able to periodically measure the temperature at each sensor, estimate which sensors are below the water line, and translate that knowledge into an estimate of the level of the water in the tank.
 
@@ -17,12 +17,14 @@ Next steps: Construct the 1-wire bus and the plugs for the sensors.
 
 ## Files
 * BillOfMaterials.ods = the parts list.
+* BreadboardCase.FCStd = the FreeCAD design file for the ESP2866 circuit case. I will add the corresponding .stl file once I'm happy with the case design.
 * createtables.sql = an SQL file to import into MySQL to create the well depth database table.
 * diagram.odp = project diagrams.
 * Diary.odt = my journal/diary of the project, with design details.
 * LICENSE = the project GPL2 license file.
 * Project.jpg = a photo of the project so far.
 * README.md = this file.
+* ThreeJackCase.FCStd = the FreeCAD design file for the case for 3 RJ45 jacks. I will add the corresponding .stl file once I'm happy with the case design.
 * webInstallation.odt = instructions on how to install the Sketch and web service.
 * WellDepth.ino = the ESP8266 Arduino Sketch.
 * welldepthconfig.php = site-specific PHP .ini-format configuration data, such as the sql database name.

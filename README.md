@@ -19,7 +19,7 @@ Next steps: Construct the 1-wire bus and the plugs for the sensors.
 * BillOfMaterials.ods = the parts list.
 * BreadboardCase.FCStd = the FreeCAD design file for the ESP2866 circuit case (in progress). I will add the corresponding .stl files once I'm happy with the case design.
 * createtables.sql = an SQL file to import into MySQL to create the well depth database table.
-* diagram.odp = project diagrams.
+* diagrams.odp = project diagrams.
 * Diary.odt = my journal/diary of the project, with design details.
 * LICENSE = the project GPL2 license file.
 * Project.jpg = a photo of the project so far.

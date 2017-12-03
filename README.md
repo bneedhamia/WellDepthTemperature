@@ -28,8 +28,8 @@ Next steps: Construct the 1-wire bus and the plugs for the sensors.
 * ThreeJackCaseBase.stl = the ready-to-print file for the base of the RJ45 case. Print right-side up, with no supports, raft, or brim. I designed it for PLA.
 * ThreeJackCaseLid.stl = the ready-to-print file for the lid of the RJ45 case. Print UPSIDE-DOWN (lid top on the print bed), with no supports, raft, or brim. I designed it for PLA.
 * webInstallation.odt = instructions on how to install the Sketch and web service.
-* WellDepth.ino = the ESP8266 Arduino Sketch.
+* WellDepthTemperature.ino = the ESP8266 Arduino Sketch.
+* WellDepthTemperature.fzz = the Fritzing (circuit wiring) diagram.
 * welldepthconfig.php = site-specific PHP .ini-format configuration data, such as the sql database name.
 Place this file in the same directory on your web site as welldepthpost.php.
 * welldepthpost.php = the php web page that receives the Arduino's HTTPS POST request.
-* More to come as I create them: fritzing diagram; mechanical notes; etc.
